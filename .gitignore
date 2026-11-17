@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.qday-data/
+.qday-shield-test-build-*/
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local credentials and private-key material
+.npmrc
+**/.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+credentials.json
+credentials.*.json
+secrets/
