@@ -86,6 +86,7 @@ export interface VerificationEvent {
   evidence: "node-reported-event";
   transactionCode: number | null;
   hybridSignaturePresent: boolean;
+  hybridSignatureAlgorithmId: number | null;
 }
 export interface QoreChainObservationSnapshot {
   source: "qorechain-testnet";
@@ -370,6 +371,7 @@ async function readVerificationEvents(client: QoreChainClient, address: string |
   const evidence = await Promise.all(latestCandidates.map(async (candidate): Promise<VerificationEvent> => {
     let transactionCode: number | null = null;
     let hybridSignaturePresent = false;
+    let hybridSignatureAlgorithmId: number | null = null;
     let matchingTransactionEvent = false;
     try {
       const detail = await getTx(client.rest, candidate.transactionHash);
@@ -385,14 +387,17 @@ async function readVerificationEvents(client: QoreChainClient, address: string |
       const body = asRecord(txPayload?.body);
       hybridSignaturePresent = Array.isArray(body?.extension_options) && body.extension_options.some((item) => {
         const extension = asRecord(item);
-        return extension?.["@type"] === "/qorechain.pqc.v1.PQCHybridSignature"
+        if (extension?.["@type"] !== "/qorechain.pqc.v1.PQCHybridSignature") return false;
+        const algorithmId = extension.algorithm_id;
+        if (algorithmId === 1 || algorithmId === "1") hybridSignatureAlgorithmId = 1;
+        return hybridSignatureAlgorithmId === 1
           && typeof extension.pqc_signature === "string" && isMlDsa87SignatureBase64(extension.pqc_signature);
       });
     } catch {
       // Keep the indexed event visible, but do not promote it to verified evidence.
     }
     const evidenceComplete = transactionCode === 0 && hybridSignaturePresent && matchingTransactionEvent;
-    return { ...candidate, eventType: "pqc_hybrid_verify", status: evidenceComplete ? "verified" : "incomplete-evidence", evidence: "node-reported-event", transactionCode, hybridSignaturePresent };
+    return { ...candidate, eventType: "pqc_hybrid_verify", status: evidenceComplete ? "verified" : "incomplete-evidence", evidence: "node-reported-event", transactionCode, hybridSignaturePresent, hybridSignatureAlgorithmId };
   }));
   return Object.freeze(evidence);
 }

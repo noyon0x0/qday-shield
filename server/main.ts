@@ -5,7 +5,7 @@ async function main(): Promise<void> {
   const api = createQDayApi({ config });
   await api.initialize();
   api.server.listen(config.port, config.host, () => {
-    process.stdout.write(`Q-Day local API listening on ${config.host}:${config.port} (${config.demoMode ? "DEMO MODE" : "SIMULATION ONLY"}).\n`);
+    process.stdout.write(`Q-Day local API listening on ${config.host}:${config.port} (DEMO MODE · SIMULATION ONLY).\n`);
   });
   const close = (): void => { api.server.close(() => { process.exitCode = 0; }); };
   process.on("SIGINT", close);

@@ -15,6 +15,10 @@ declare module "node:http" {
   }
   export interface AddressInfo { port: number; address: string; family: string; }
   export interface Server {
+    headersTimeout: number;
+    requestTimeout: number;
+    keepAliveTimeout: number;
+    maxHeadersCount: number | null;
     listen(port: number, host: string, callback?: () => void): this;
     close(callback?: (error?: Error) => void): this;
     address(): AddressInfo | string | null;
@@ -48,6 +52,7 @@ declare module "node:crypto" {
     digest(encoding: "hex"): string;
   }
   export function createHash(algorithm: string): Hash;
+  export function randomUUID(): string;
   export function timingSafeEqual(left: Uint8Array, right: Uint8Array): boolean;
 }
 

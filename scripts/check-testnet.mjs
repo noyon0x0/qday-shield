@@ -42,6 +42,9 @@ async function run() {
   const nativeValid = Boolean(header && typeof header.chain_id === "string" && /^\d+$/.test(header.height ?? "") && BigInt(header.height) > 0n);
   const observedEvmChainId = evmChainResult.status === "fulfilled" ? parseQuantity(evmChainResult.value) : null;
   const observedEvmHeight = evmHeightResult.status === "fulfilled" ? parseQuantity(evmHeightResult.value) : null;
+  if (nativeResult.status === "rejected") console.log(`Native REST request: UNAVAILABLE · ${safeFailure(nativeResult.reason)}`);
+  if (evmChainResult.status === "rejected") console.log(`EVM eth_chainId request: UNAVAILABLE · ${safeFailure(evmChainResult.reason)}`);
+  if (evmHeightResult.status === "rejected") console.log(`EVM eth_blockNumber request: UNAVAILABLE · ${safeFailure(evmHeightResult.reason)}`);
   const nativeMatches = nativeValid && header.chain_id === nativeChainId;
   const evmMatches = observedEvmChainId === BigInt(evmChainId);
   console.log(`Native chain ID: ${nativeValid ? `${header.chain_id} (${nativeMatches ? "LIVE TESTNET" : "UNAVAILABLE · MISMATCH"})` : "UNAVAILABLE · no valid REST response"}`);
@@ -129,6 +132,12 @@ function collectEvents(transactions, account) {
 function parseQuantity(value) {
   if (typeof value !== "string" || !/^0x(?:0|[1-9a-f][0-9a-f]*)$/i.test(value)) throw new Error("EVM RPC returned a malformed quantity.");
   return BigInt(value);
+}
+
+function safeFailure(error) {
+  if (!(error instanceof Error)) return "request failed";
+  const detail = error.message.replace(/Bearer\s+\S+/gi, "Bearer [redacted]").replace(/([?&][^=]+)=([^&\s]+)/g, "$1=[redacted]").slice(0, 240);
+  return `${error.name}: ${detail || "request failed"}`;
 }
 
 run().catch((error) => {

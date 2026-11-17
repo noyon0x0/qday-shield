@@ -37,10 +37,10 @@ try {
     process.exitCode = 1;
   } else {
     writeFileSync(join(temporaryRoot, "package.json"), JSON.stringify({ type: "module" }));
-    const testFiles = [resolve(projectRoot, "tests", "policyEngine.test.mjs"), resolve(projectRoot, "tests", "api.test.mjs"), resolve(projectRoot, "tests", "network.test.mjs"), resolve(projectRoot, "tests", "evmWindow.test.mjs")];
+    const testFiles = [resolve(projectRoot, "tests", "policyEngine.test.mjs"), resolve(projectRoot, "tests", "api.test.mjs"), resolve(projectRoot, "tests", "network.test.mjs"), resolve(projectRoot, "tests", "evmWindow.test.mjs"), resolve(projectRoot, "tests", "pqc.test.mjs"), resolve(projectRoot, "tests", "tokenomicsService.test.mjs")];
     const result = spawnSync(process.execPath, ["--test", ...testFiles], {
       stdio: "inherit",
-      env: { ...process.env, QDAY_SECURITY_CORE_ENTRY: pathToFileURL(join(temporaryRoot, "src", "security", "index.js")).href, QDAY_API_ENTRY: pathToFileURL(join(temporaryRoot, "server", "app.js")).href, QDAY_NETWORK_MONITOR_ENTRY: pathToFileURL(join(temporaryRoot, "src", "network", "qorechainMonitor.js")).href },
+      env: { ...process.env, QDAY_SECURITY_CORE_ENTRY: pathToFileURL(join(temporaryRoot, "src", "security", "index.js")).href, QDAY_API_ENTRY: pathToFileURL(join(temporaryRoot, "server", "app.js")).href, QDAY_NETWORK_MONITOR_ENTRY: pathToFileURL(join(temporaryRoot, "src", "network", "qorechainMonitor.js")).href, QDAY_TOKENOMICS_ENTRY: pathToFileURL(join(temporaryRoot, "server", "tokenomicsService.js")).href },
     });
     process.exitCode = result.status ?? 1;
     if (result.error) throw result.error;

@@ -1,8 +1,8 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 
-// Browser REST reads use the fixed Diana testnet endpoint through /lcd to avoid
-// relying on public CORS behavior. EVM JSON-RPC uses the fixed testnet endpoint.
+// Browser Native REST reads use /lcd. Tokenomics uses the local API proxy so upstream
+// REST and EVM CORS policy does not leak into the browser.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "");
   const target = "https://api-testnet.qore.host";

@@ -22,7 +22,7 @@ This repository is a testnet read dashboard and local education/demo project. It
 - API request schemas reject unknown fields; bodies are capped at 8 KiB; sensitive operations are rate-limited; remote binding requires an explicit opt-in and sufficiently long bearer token. Request bodies, authorization headers and exception objects are not logged.
 - Persistent and in-memory audit tests detect tampering/reordering. The API disables sensitive operations if the stored chain fails verification.
 - Testnet monitor responses distinguish available, unavailable and not-configured data; stale values are retained separately and never labeled live. Tests verify malformed responses do not become invented live zeroes.
-- Hybrid event evidence is not called corroborated unless the transaction lookup reports code 0, a matching positive event and a nonempty PQC hybrid-signature extension. The application does not locally verify the cryptographic signature.
+- Hybrid event evidence is labeled node-reported and is only corroborated when the transaction lookup reports code 0, a matching positive event, the documented PQCHybridSignature type URL, algorithm id 1, and a 4,627-byte ML-DSA-87 signature. The application does not locally verify the returned transaction signature.
 - `scripts/check-testnet.mjs` is a separate manually invoked read-only check. Its endpoints are fixed to Diana; it stops before further reads when identity is mismatched or unavailable.
 
 ## Audit integrity limits
@@ -33,7 +33,7 @@ The persistent store has no cross-process lock. Run one API process per audit di
 
 ## API deployment limits
 
-The safe default binds to loopback. Remote mode is not production-ready: a shared bearer token is not user identity, role-based authorization or key rotation; TLS termination and network policy are deployment concerns; rate limits are in-memory and per-process; approval state is process-local; the API is not hardened against every denial-of-service pattern. `QDAY_DEMO_MODE=false` changes a display label only: the API remains simulation-only. Do not expose it publicly as a transaction authorization service.
+The safe default binds to loopback. Remote mode is not production-ready: a shared bearer token is not user identity, role-based authorization or key rotation; TLS termination and network policy are deployment concerns; rate limits are in-memory and per-process; the API is not hardened against every denial-of-service pattern. Pending simulator approvals now restore from verified audit records, but actors remain fixed demo labels. The API always identifies itself as demo-only. Do not expose it publicly as a transaction authorization service.
 
 ## Protocol correctness
 

@@ -26,8 +26,135 @@ body{background:radial-gradient(ellipse at 84% 4%,rgba(43,93,137,.17),transparen
 .decision-panel{position:relative;display:flex;align-items:center;gap:11px;margin:3px 0 12px 32px;padding:10px 11px;border:1px solid #8198ae25;border-radius:4px;background:#0e1721a8;transition:border-color .25s,background .25s}.decision-complete{border-color:#dd78834b;background:linear-gradient(100deg,#2b1921a8,#121821a8)}.decision-glyph{width:30px;height:30px;display:grid;place-items:center;border:1px solid #8297a127;border-radius:5px;color:#8eabbc;background:#1a2531;flex:none}.decision-complete .decision-glyph{color:#ef9299;border-color:#d6788336;background:#311e25}.decision-panel>div{display:grid;gap:4px;flex:1;min-width:0}.decision-panel .eyebrow{font-size:7px}.decision-panel>div>strong{font-size:10px;color:#e2edf1}.decision-panel>div>small{font-size:8px;line-height:1.5;color:#8798a6}.decision-panel>.badge{font-size:8px}.risk-explanation .section-heading{margin-bottom:8px}.risk-factor{display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #8bb8d014}.risk-factor-icon{width:25px;height:25px;display:grid;place-items:center;color:#ec8b94;background:#2d1d24;border-radius:4px;flex:none}.risk-factor-icon.amber-factor{color:#e4b763;background:#2b251a}.risk-factor>div{display:grid;gap:3px;flex:1;min-width:0}.risk-factor strong{font-size:9px;color:#d3dfe6}.risk-factor small{font-size:8px;color:#8293a1}.risk-factor .badge{font-size:7px;padding:3px 5px}.risk-explain-note{padding:9px;border-left:2px solid #dcaa4c;background:#e8b66009;color:#a8997c;font-size:8px;line-height:1.55}
 @media(max-width:760px){.decision-panel{margin-left:0}.decision-panel>.badge{display:none}.posture-statuses{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:430px){.posture-statuses{grid-template-columns:1fr}.decision-panel{gap:8px}.decision-panel>div>small{font-size:7px}}
+.tokenomics-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:18px 0}.tokenomics-stat{display:grid;gap:8px;min-width:0;padding:14px;border:1px solid var(--line,rgba(130,160,190,.16));border-radius:8px;background:rgba(10,18,27,.48)}.tokenomics-stat>span,.tokenomics-stat>small{color:var(--muted,#8b9aaa);font-size:11px}.tokenomics-stat>strong{font-size:clamp(16px,2vw,23px);overflow-wrap:anywhere;color:#dff7f8}.tokenomics-details{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 0;border-top:1px solid var(--line,rgba(130,160,190,.16));border-bottom:1px solid var(--line,rgba(130,160,190,.16))}.tokenomics-details>div{display:grid;gap:5px;min-width:0}.tokenomics-details span,.tokenomics-details strong{font-size:11px;overflow-wrap:anywhere}.tokenomics-details span{color:var(--muted,#8b9aaa)}.tokenomics-burns{margin:16px 0}.tokenomics-burns h3{display:flex;align-items:center;gap:9px;margin:0 0 10px;font-size:13px}.tokenomics-burn-row{display:grid;grid-template-columns:125px minmax(50px,1fr) minmax(100px,auto);gap:10px;align-items:center;padding:6px 0}.tokenomics-burn-row>span,.tokenomics-burn-row>strong{font-size:10px;overflow-wrap:anywhere}.tokenomics-bar{height:5px;background:#17212c;border-radius:8px;overflow:hidden}.tokenomics-bar i{display:block;height:100%;background:linear-gradient(90deg,#5acbd5,#8797eb);border-radius:inherit}.tokenomics-provenance{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:14px 0;color:var(--muted,#8b9aaa);font-size:10px}.tokenomics-sources{display:grid;gap:7px;padding-top:12px;border-top:1px solid var(--line,rgba(130,160,190,.16))}.tokenomics-sources>strong{font-size:11px}.tokenomics-sources>div{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0}.tokenomics-sources code,.tokenomics-sources small{grid-column:2/-1;overflow-wrap:anywhere;font-size:9px;color:var(--muted,#8b9aaa)}@media(max-width:760px){.tokenomics-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.tokenomics-details{grid-template-columns:repeat(2,minmax(0,1fr))}.tokenomics-burn-row{grid-template-columns:90px minmax(40px,1fr) minmax(85px,auto)}}
 .monitor-live-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin:13px 0}.monitor-live-grid>.wide-card{grid-column:1/-1}.monitor-source{display:flex;flex-wrap:wrap;gap:9px 22px;padding:10px 12px;margin:10px 0 12px;border:1px solid #243441;background:#0e151edb;border-radius:5px;color:#7f91a0;font:9px 'DM Mono',monospace}.monitor-source strong{color:#c8d5df;font-weight:600;margin-right:5px}.monitor-status{gap:14px}.monitor-status>.button{margin-left:auto}.observation-state{display:flex;align-items:center;flex-wrap:wrap;gap:7px;color:#99a8b6;background:#101923;border:1px solid #24323d;border-radius:5px;padding:9px 10px;margin:8px 0 11px;font-size:9px;line-height:1.5}.observation-state small{width:100%;padding-left:13px;color:#71818f;font:8px 'DM Mono',monospace}.observation-available{color:#92dcb4;background:#112019;border-color:#244635}.observation-rows{display:grid}.live-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:9px 1px;border-top:1px solid #8bb8d014;font-size:9px}.live-row span{color:#8190a0;flex:none}.live-row strong{text-align:right;color:#d5dee7;font:10px 'DM Mono',monospace;overflow-wrap:anywhere}.network-warning{font-size:9px;color:#f0c578;line-height:1.5}.feature-height{padding:7px 0 9px;color:#788a99;font-size:9px}.feature-height strong{color:#9de3df;font:10px 'DM Mono',monospace;margin-left:5px}.feature-list{max-height:310px;overflow:auto}.feature-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid #8bb8d014}.feature-row>span{display:grid;gap:4px;min-width:0}.feature-row strong{color:#cbd6e0;font:9px 'DM Mono',monospace;overflow-wrap:anywhere}.feature-row small{color:#758493;font-size:8px}.monitor-address-form{display:flex;align-items:center;flex-wrap:wrap;margin:6px 0}.public-address-label{color:#718391;font:8px 'DM Mono',monospace;letter-spacing:.07em}.network-event-list{display:grid}.network-event{display:flex;align-items:center;gap:12px;padding:12px 4px;border-top:1px solid #8bb8d014}.network-event-main{display:grid;gap:4px;flex:1;min-width:0}.network-event-main small{color:#75cfa3;font:8px 'DM Mono',monospace}.network-event-main strong{color:#cbd6e0;font-size:9px}.network-event-main code{color:#8093a4;font:8px 'DM Mono',monospace;overflow-wrap:anywhere}.monitor-read-grid{margin-top:14px}.monitor-read-grid>.card{min-width:0}
 @media(max-width:760px){.monitor-live-grid{grid-template-columns:1fr}.monitor-live-grid>.wide-card{grid-column:auto}.monitor-source{display:grid;gap:7px}.monitor-status>.button{margin-left:0}.monitor-read-grid{grid-template-columns:1fr}}
 .evm-demo{margin:16px 0;padding:16px;border:1px solid #283846;border-radius:6px;background:linear-gradient(145deg,#101923ed,#0c131ce8);box-shadow:0 12px 32px #02060b38}.evm-demo-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:13px}.evm-demo-header h2{margin:5px 0;color:#e1ebf1;font-size:17px;letter-spacing:-.025em}.evm-demo-header p{margin:0;color:#8595a4;font-size:9px}.evm-demo-explainer{display:flex;gap:10px;padding:11px;border:1px solid #39546a;background:#111e29;border-radius:4px;color:#78cde0}.evm-demo-explainer p{margin:0;color:#9aabb8;font-size:9px;line-height:1.65}.evm-demo-explainer strong{color:#c9e8f2}.evm-demo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.evm-demo-result{min-width:0}.evm-mock-tx{display:grid;gap:5px;padding:10px;border:1px solid #253542;background:#0b121a;border-radius:4px}.evm-mock-tx>span{color:#788b99;font:8px 'DM Mono',monospace;letter-spacing:.09em}.evm-mock-tx code{color:#b9cbd6;font:9px 'DM Mono',monospace;overflow-wrap:anywhere}.evm-mock-tx small,.evm-mock-bound{color:#788b99;font:8px 'DM Mono',monospace;overflow-wrap:anywhere}.evm-mock-bound{padding:9px 0 0}.evm-decision{display:flex;gap:9px;margin-top:11px;padding:10px;border:1px solid #6b343b;background:#21171d;border-radius:4px}.evm-deny-mark{display:grid;place-items:center;flex:none;width:25px;height:25px;color:#f08c94;background:#351f25;border-radius:4px}.evm-decision>div{min-width:0}.evm-decision strong{color:#f0b0b5;font-size:10px}.evm-decision p{margin:5px 0;color:#b6a1a5;font-size:9px;line-height:1.55}.evm-decision small{color:#8d7e83;font:8px/1.5 'DM Mono',monospace;overflow-wrap:anywhere}.evm-demo-footnote{margin:12px 1px 0;color:#758493;font-size:8px;line-height:1.5}.evm-demo .section-heading{margin-bottom:9px}
 @media(max-width:760px){.evm-demo-grid{grid-template-columns:1fr}.evm-demo{padding:12px}.evm-demo-header{align-items:flex-start}}
 @media(prefers-reduced-motion:reduce){.evm-demo *{animation:none!important;transition:none!important}}
+
+/* Q-Day Shield header wallet shortcut */
+.wallet-connect-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 12px;border:1px solid #286d70;border-radius:5px;background:linear-gradient(135deg,#123b3d,#102a32);color:#9de3df;font:600 10px 'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;transition:background .2s,border-color .2s}
+.wallet-connect-button:hover{background:#19484a;border-color:#54aaa5}
+@media(max-width:760px){.wallet-connect-button{padding:7px 8px;font-size:9px;gap:4px}}
+/* Premium Wallet Connect Button */
+.topbar .topbar-right > .wallet-connect-button{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:8px!important;
+  padding:9px 15px!important;
+  min-height:36px!important;
+  border:1px solid #36aaa0!important;
+  border-radius:7px!important;
+  background:linear-gradient(135deg,#164e50 0%,#087e78 55%,#12645f 100%)!important;
+  color:#e0fffa!important;
+  font-family:'DM Sans',sans-serif!important;
+  font-size:11px!important;
+  font-weight:700!important;
+  letter-spacing:.035em!important;
+  box-shadow:0 3px 14px #00b8a51c,inset 0 1px 0 #ffffff20!important;
+  cursor:pointer!important;
+  white-space:nowrap!important;
+  transition:all .2s ease!important;
+}
+.topbar .topbar-right > .wallet-connect-button:hover{
+  background:linear-gradient(135deg,#1d6868,#0aa397)!important;
+  border-color:#71e2d4!important;
+  color:#ffffff!important;
+  box-shadow:0 0 18px #00d5bd35!important;
+  transform:translateY(-1px);
+}
+@media(max-width:390px){
+  .topbar .topbar-right > .wallet-connect-button{padding:7px 8px!important;font-size:9px!important;gap:4px!important}
+}
+/* Premium Wallet Connect Button */
+.topbar .topbar-right > .wallet-connect-button{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:8px!important;
+  padding:9px 15px!important;
+  min-height:36px!important;
+  border:1px solid #36aaa0!important;
+  border-radius:7px!important;
+  background:linear-gradient(135deg,#164e50 0%,#087e78 55%,#12645f 100%)!important;
+  color:#e0fffa!important;
+  font-family:'DM Sans',sans-serif!important;
+  font-size:11px!important;
+  font-weight:700!important;
+  letter-spacing:.035em!important;
+  box-shadow:0 3px 14px #00b8a51c,inset 0 1px 0 #ffffff20!important;
+  cursor:pointer!important;
+  white-space:nowrap!important;
+  transition:all .2s ease!important;
+}
+.topbar .topbar-right > .wallet-connect-button:hover{
+  background:linear-gradient(135deg,#1d6868,#0aa397)!important;
+  border-color:#71e2d4!important;
+  color:#ffffff!important;
+  box-shadow:0 0 18px #00d5bd35!important;
+  transform:translateY(-1px);
+}
+@media(max-width:390px){
+  .topbar .topbar-right > .wallet-connect-button{padding:7px 8px!important;font-size:9px!important;gap:4px!important}
+}
+/* Q-DAY SHIELD - BUTTON VISIBILITY FIX */
+button:not(.icon-button) {
+  background: #1e40af !important;
+  color: #ffffff !important;
+  border: 1px solid #3b82f6 !important;
+  font-weight: 700 !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+button:not(.icon-button) * {
+  color: inherit !important;
+}
+
+button:not(.icon-button):hover:not(:disabled) {
+  background: #2563eb !important;
+  border-color: #60a5fa !important;
+  transform: translateY(-1px);
+}
+
+button[class*="deploy" i] {
+  background: #15803d !important;
+  border-color: #22c55e !important;
+}
+
+button[class*="deploy" i]:hover:not(:disabled) {
+  background: #16a34a !important;
+}
+
+button[class*="danger" i],
+button[class*="disconnect" i],
+button[class*="remove" i] {
+  background: #b91c1c !important;
+  border-color: #ef4444 !important;
+}
+
+button[class*="secondary" i],
+button[class*="ghost" i] {
+  background: #334155 !important;
+  color: #ffffff !important;
+  border-color: #64748b !important;
+}
+
+button:not(.icon-button):disabled {
+  background: #475569 !important;
+  color: #cbd5e1 !important;
+  border-color: #64748b !important;
+  opacity: 0.65 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+button:not(.icon-button):focus-visible {
+  outline: 3px solid #facc15 !important;
+  outline-offset: 3px !important;
+}
+

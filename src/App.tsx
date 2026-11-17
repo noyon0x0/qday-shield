@@ -1,3 +1,5 @@
+﻿import OnChainPolicy from "./OnChainPolicy.js";
+import WalletConnect from "./WalletConnect.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type QoreChainClient } from "@qorechain/sdk";
 import { Badge, Button, Card, EmptyState, Freshness, GlassPanel, GlowCard, Icon, MetricCard, PremiumChart, QuantumNetworkBackground, SectionHeading, SecurityStatus, SecurityTimeline, StatusDot, type BadgeTone, type TimelineEvent } from "./components.js";
@@ -5,27 +7,29 @@ import { createDemoPolicy, createFakeTestIdentity, createSimulatedTransfer, Secu
 import { PolicyCenterPage, SecurityAuditPage, SecuritySimulatorPage } from "./SecurityViews.js";
 import { QoreChainMonitorView } from "./QoreChainMonitorView.js";
 import { createBoundedReadFetch, fetchAccountTransactionPage, isPublicTestAddress, QORECHAIN_TESTNET, refreshQoreChainObservations, type QoreChainObservationSnapshot } from "./network/qorechainMonitor.js";
+import { fetchTokenomicsSnapshot } from "./network/tokenomicsClient.js";
+import type { TokenomicsSnapshot } from "./network/tokenomicsTypes.js";
 import "./styles.css";
 
 const REST_URL = "/lcd";
 const EVM_RPC_URL = QORECHAIN_TESTNET.evmRpc;
 type PageId = "overview" | "simulator" | "policies" | "monitor" | "audit" | "settings";
 interface Balance { denom: string; amount: string; }
-type ReadState<T> = { status: "idle" | "loading" | "error" | "success"; data: T | null; error: string | null; updatedAt: Date | null; staleData?: T; };
+type ReadState<T> = { status: "idle" | "loading" | "error" | "success"; data: T | null; error: string | null; updatedAt: Date | null; staleData?: T; address?: string; staleAddress?: string; };
 const pageInfo: Record<PageId, { label: string; eyebrow: string; title: string; description: string; icon: string }> = {
   overview: { label: "Overview", eyebrow: "SECURITY OPERATIONS", title: "Good morning, operator.", description: "Your QoreChain security posture at a glance.", icon: "grid" },
-  simulator: { label: "Attack simulator", eyebrow: "THREAT LAB · SIMULATED", title: "Classical key exposure", description: "Explore a deterministic compromise scenario against a clearly labeled demo policy.", icon: "crosshair" },
-  policies: { label: "Security policies", eyebrow: "CONTROL PLANE · DEMO", title: "Policy center", description: "Review the safeguards configured for this demo environment.", icon: "shield" },
-  monitor: { label: "QoreChain monitor", eyebrow: "QORECHAIN · TESTNET", title: "Network monitor", description: "Read-only connection to QoreChain testnet. No transaction actions are available.", icon: "activity" },
-  audit: { label: "Audit logs", eyebrow: "EVENT JOURNAL · SIMULATED", title: "Audit trail", description: "Illustrative security events for the demo workspace.", icon: "list" },
+  simulator: { label: "Attack simulator", eyebrow: "THREAT LAB Â· SIMULATED", title: "Classical key exposure", description: "Explore a deterministic compromise scenario against a clearly labeled demo policy.", icon: "crosshair" },
+  policies: { label: "Security policies", eyebrow: "CONTROL PLANE Â· DEMO", title: "Policy center", description: "Review the safeguards configured for this demo environment.", icon: "shield" },
+  monitor: { label: "QoreChain monitor", eyebrow: "QORECHAIN Â· TESTNET", title: "Network monitor", description: "Read-only connection to QoreChain testnet. No transaction actions are available.", icon: "activity" },
+  audit: { label: "Audit logs", eyebrow: "EVENT JOURNAL Â· SIMULATED", title: "Audit trail", description: "Illustrative security events for the demo workspace.", icon: "list" },
   settings: { label: "Settings", eyebrow: "WORKSPACE CONFIGURATION", title: "Environment settings", description: "Connection details and display preferences for this dashboard.", icon: "settings" },
 };
 
 const demoEvents: TimelineEvent[] = [
-  { time: "09:42:18", kind: "POLICY", title: "Spending threshold evaluated", detail: "Demo transfer · 2,400 QOR · approval required", tone: "amber" },
-  { time: "09:38:04", kind: "NETWORK", title: "Testnet monitor initialized", detail: "Read-only session · qorechain-diana", tone: "cyan" },
-  { time: "09:31:52", kind: "SIMULATION", title: "Classical key scenario contained", detail: "Illustrative event · no cryptographic attack performed", tone: "green" },
-  { time: "09:16:10", kind: "POLICY", title: "Allowlist rule reviewed", detail: "Demo policy set · all transfers require policy evaluation", tone: "violet" },
+  { time: "09:42:18", kind: "POLICY", title: "Spending threshold evaluated", detail: "Demo transfer Â· 2,400 QOR Â· approval required", tone: "amber" },
+  { time: "09:38:04", kind: "NETWORK", title: "Testnet monitor initialized", detail: "Read-only session Â· qorechain-diana", tone: "cyan" },
+  { time: "09:31:52", kind: "SIMULATION", title: "Classical key scenario contained", detail: "Illustrative event Â· no cryptographic attack performed", tone: "green" },
+  { time: "09:16:10", kind: "POLICY", title: "Allowlist rule reviewed", detail: "Demo policy set Â· all transfers require policy evaluation", tone: "violet" },
 ];
 const navGroups: { heading: string; items: PageId[] }[] = [
   { heading: "COMMAND", items: ["overview", "simulator"] },
@@ -48,7 +52,7 @@ export function App(): JSX.Element {
   const [transactionPageLoading, setTransactionPageLoading] = useState(false);
   const [transactionPageError, setTransactionPageError] = useState<string | null>(null);
   const [balanceState, setBalanceState] = useState<ReadState<Balance[]>>({ status: "idle", data: null, error: null, updatedAt: null });
-  const [tokenState, setTokenState] = useState<ReadState<string>>({ status: "idle", data: null, error: null, updatedAt: null });
+  const [tokenState, setTokenState] = useState<ReadState<TokenomicsSnapshot>>({ status: "idle", data: null, error: null, updatedAt: null });
   const [auditRevision, setAuditRevision] = useState(0);
   const [simulationDecision, setSimulationDecision] = useState<PolicyDecision | null>(null);
   const [lastSimulationAction, setLastSimulationAction] = useState<SimulatedTransfer | null>(null);
@@ -59,6 +63,15 @@ export function App(): JSX.Element {
   const info = pageInfo[page];
   const anyLoading = balanceState.status === "loading" || tokenState.status === "loading";
   const navigate = (target: PageId): void => { setPage(target); setMobileNavOpen(false); };
+  const handleNativeAddressChange = useCallback((nativeAddress: string): void => {
+    if (!isPublicTestAddress(nativeAddress)) {
+      setNetworkRefreshError("QoreX returned an invalid public qor1 address; monitor address was not changed.");
+      return;
+    }
+    setAddress(nativeAddress);
+    setNetworkSnapshot(null);
+    setNetworkRefreshError(null);
+  }, []);
 
   const refreshNetworkObservations = useCallback(async (): Promise<void> => {
     if (networkRefreshing) return;
@@ -96,8 +109,12 @@ export function App(): JSX.Element {
   }, [address, client, networkSnapshot, transactionPageLoading]);
 
   useEffect(() => {
-    if (page === "monitor" && networkSnapshot === null) void refreshNetworkObservations();
+    if ((page === "overview" || page === "monitor") && networkSnapshot === null) void refreshNetworkObservations();
   }, [page, networkSnapshot, refreshNetworkObservations]);
+
+  useEffect(() => {
+    if ((page === "overview" || page === "monitor") && tokenState.status === "idle") void loadTokenomics();
+  }, [page, tokenState.status]);
 
   async function runAttackSimulation(replay = false): Promise<void> {
     if (simulationRunning) return;
@@ -137,29 +154,26 @@ export function App(): JSX.Element {
   }
 
   async function loadBalance(): Promise<void> {
-    if (!isPublicTestAddress(address)) { setBalanceState({ status: "error", data: null, error: "Enter a valid public qor1 test address to request a balance.", updatedAt: null }); return; }
+    const requestedAddress = address.trim();
+    if (!isPublicTestAddress(requestedAddress)) { setBalanceState((previous) => ({ status: "error", data: null, error: "Enter a valid public qor1 test address to request a balance.", updatedAt: previous.updatedAt, ...(previous.data || previous.staleData ? { staleData: previous.data ?? previous.staleData, staleAddress: previous.address ?? previous.staleAddress } : {}) })); return; }
     setBalanceState((s) => ({ ...s, status: "loading", error: null }));
     try {
-      const identity = await refreshQoreChainObservations(client, address, networkFetch, () => new Date(), networkSnapshot);
+      const identity = await refreshQoreChainObservations(client, requestedAddress, networkFetch, () => new Date(), networkSnapshot);
       setNetworkSnapshot(identity);
       if (!isDianaIdentityVerified(identity)) throw new Error("Balance read blocked until both Diana network identities are verified.");
-      const response = await client.rest.getAllBalances(address.trim());
+      const response = await client.rest.getAllBalances(requestedAddress);
       if (!Array.isArray(response.balances) || response.balances.some((coin) => !coin || typeof coin.denom !== "string" || !coin.denom || typeof coin.amount !== "string" || !/^\d+$/.test(coin.amount))) throw new Error("Balance endpoint returned malformed data.");
-      setBalanceState({ status: "success", data: response.balances, error: null, updatedAt: new Date() });
+      setBalanceState({ status: "success", data: response.balances, error: null, updatedAt: new Date(), address: requestedAddress });
     } catch (error) {
-      setBalanceState((previous) => ({ status: "error", data: null, error: error instanceof Error ? error.message : String(error), updatedAt: previous.updatedAt, ...((previous.data ?? previous.staleData) === undefined || previous.data === null && previous.staleData === undefined ? {} : { staleData: previous.data ?? previous.staleData }) }));
+      setBalanceState((previous) => ({ status: "error", data: null, error: error instanceof Error ? error.message : String(error), updatedAt: previous.updatedAt, ...((previous.data ?? previous.staleData) === undefined || previous.data === null && previous.staleData === undefined ? {} : { staleData: previous.data ?? previous.staleData, staleAddress: previous.address ?? previous.staleAddress }) }));
     }
   }
   async function loadTokenomics(): Promise<void> {
     setTokenState((s) => ({ ...s, status: "loading", error: null }));
     try {
-      const identity = await refreshQoreChainObservations(client, address, networkFetch, () => new Date(), networkSnapshot);
-      setNetworkSnapshot(identity);
-      if (!isDianaIdentityVerified(identity)) throw new Error("Tokenomics read blocked until both Diana network identities are verified.");
-      const result = await client.qor.getTokenomicsOverview();
-      const serialized = JSON.stringify(result, null, 2);
-      if (typeof result !== "object" || result === null || Array.isArray(result) || typeof serialized !== "string" || serialized.length > 100_000) throw new Error("Tokenomics endpoint returned malformed or oversized data.");
-      setTokenState({ status: "success", data: serialized, error: null, updatedAt: new Date() });
+      const result = await fetchTokenomicsSnapshot();
+      const lastSuccessfulAt = result.lastSuccessfulAt ? new Date(result.lastSuccessfulAt) : null;
+      setTokenState({ status: "success", data: result, error: null, updatedAt: lastSuccessfulAt });
     } catch (error) {
       setTokenState((previous) => ({ status: "error", data: null, error: error instanceof Error ? error.message : String(error), updatedAt: previous.updatedAt, ...((previous.data ?? previous.staleData) === undefined || previous.data === null && previous.staleData === undefined ? {} : { staleData: previous.data ?? previous.staleData }) }));
     }
@@ -177,62 +191,173 @@ export function App(): JSX.Element {
     </aside>
     {mobileNavOpen && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
     <main className="main-area">
-      <header className="topbar"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Icon name="menu" /></button><div className="breadcrumbs"><span>Q-DAY SHIELD</span><Icon name="chevron" size={13} /><strong>{info.label}</strong></div><div className="topbar-right"><Badge tone="demo"><span className="demo-pulse" />SIMULATED CONTROLS</Badge><span className="topbar-divider" /><span className="net-state"><StatusDot tone="muted" />TESTNET · READ ONLY</span><button className="icon-button notification-button" aria-label="Notifications"><Icon name="bell" size={17} /><i /></button><span className="top-avatar">OP</span></div></header>
+      <header className="topbar"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Icon name="menu" /></button><div className="breadcrumbs"><span>Q-DAY SHIELD</span><Icon name="chevron" size={13} /><strong>{info.label}</strong></div><div className="topbar-right">{isDianaIdentityVerified(networkSnapshot) ? <Badge tone="green"><span className="demo-pulse" />DIANA TESTNET VERIFIED</Badge> : <Badge tone="amber">IDENTITY NOT VERIFIED</Badge>}<span className="topbar-divider" /><span className="net-state"><StatusDot tone={isDianaIdentityVerified(networkSnapshot) ? "green" : "amber"} />{isDianaIdentityVerified(networkSnapshot) ? "DIANA TESTNET Â· VERIFIED" : "DIANA TESTNET Â· IDENTITY NOT VERIFIED"}</span><button className="wallet-connect-button" onClick={() => navigate("settings")}><Icon name="wallet" size={15} />Wallet Connect</button><button className="icon-button notification-button" aria-label="Notifications"><Icon name="bell" size={17} /><i /></button><span className="top-avatar">OP</span></div></header>
       <div className={`page-content page-transition page-${page}`} key={page}>
-        <div className="page-intro"><div><div className="eyebrow"><span className="eyebrow-line" />{info.eyebrow}</div><h1>{info.title}</h1><p>{info.description}</p></div><div className="intro-actions"><span className="read-only-chip"><Icon name="lock" size={13} /> NO SIGNING · NO BROADCAST</span>{page === "overview" && <Button onClick={() => void loadTokenomics()} disabled={anyLoading} icon="refresh">{tokenState.status === "loading" ? "Refreshing…" : "Refresh tokenomics"}</Button>}</div></div>
+        <div className="page-intro"><div><div className="eyebrow"><span className="eyebrow-line" />{info.eyebrow}</div><h1>{info.title}</h1><p>{info.description}</p></div><div className="intro-actions"><span className="read-only-chip"><Icon name="lock" size={13} /> NO SIGNING Â· NO BROADCAST</span>{page === "overview" && <Button onClick={() => void loadTokenomics()} disabled={anyLoading} icon="refresh">{tokenState.status === "loading" ? "Refreshingâ€¦" : "Refresh tokenomics"}</Button>}</div></div>
         {page === "overview" && <OverviewPage address={address} setAddress={setAddress} balanceState={balanceState} tokenState={tokenState} emergencyPaused={policyEngine.isEmergencyPaused} networkSnapshot={networkSnapshot} loadBalance={() => void loadBalance()} loadTokenomics={() => void loadTokenomics()} openAudit={() => navigate("audit")} />}
         {page === "simulator" && <SecuritySimulatorPage decision={simulationDecision} lastAction={lastSimulationAction} running={simulationRunning} error={simulationError} run={runAttackSimulation} />}
         {page === "policies" && <PolicyCenterPage snapshot={policyEngine.snapshot} togglePause={() => void toggleEmergencyPause()} controlError={policyControlError} />}
         {page === "monitor" && <MonitorPage client={client} balanceState={balanceState} tokenState={tokenState} address={address} setAddress={setAddress} loadBalance={() => void loadBalance()} loadTokenomics={() => void loadTokenomics()} snapshot={networkSnapshot} refreshing={networkRefreshing} refreshError={networkRefreshError} refreshNetwork={() => void refreshNetworkObservations()} loadMoreTransactions={() => void loadMoreAccountTransactions()} transactionPageLoading={transactionPageLoading} transactionPageError={transactionPageError} />}
         {page === "audit" && <SecurityAuditPage auditLog={policyEngine.auditLog} revision={auditRevision} />}
-        {page === "settings" && <SettingsPage client={client} balanceState={balanceState} tokenState={tokenState} />}
-        <footer className="page-footer"><span>Q-DAY SHIELD <b>·</b> SECURITY CONSOLE</span><span>Demo workspace <b>·</b> Read-only network access</span></footer>
+        {page === "settings" && <SettingsPage client={client} balanceState={balanceState} tokenState={tokenState} onNativeAddressChange={handleNativeAddressChange} />}
+        <footer className="page-footer"><span>Q-DAY SHIELD <b>Â·</b> SECURITY CONSOLE</span><span>QoreChain Diana Testnet <b>Â·</b> Read-only network access</span></footer>
       </div>
     </main>
   </div>;
 }
 
-function OverviewPage(props: { address: string; setAddress: (value: string) => void; balanceState: ReadState<Balance[]>; tokenState: ReadState<string>; emergencyPaused: boolean; networkSnapshot: QoreChainObservationSnapshot | null; loadBalance: () => void; loadTokenomics: () => void; openAudit: () => void }): JSX.Element {
+function OverviewPage(props: { address: string; setAddress: (value: string) => void; balanceState: ReadState<Balance[]>; tokenState: ReadState<TokenomicsSnapshot>; emergencyPaused: boolean; networkSnapshot: QoreChainObservationSnapshot | null; loadBalance: () => void; loadTokenomics: () => void; openAudit: () => void }): JSX.Element {
   return <>
-    <div className="demo-banner"><div className="banner-icon"><Icon name="flask" size={18} /></div><div><strong>Simulated security workspace</strong><span>Threat metrics and activity below are mock data. Network values appear only after both Diana identities are verified.</span></div><Badge tone="demo">MOCK DATA</Badge></div>
+    <div className="demo-banner"><div className="banner-icon"><Icon name="flask" size={18} /></div><div><strong>QoreChain Diana Testnet workspace</strong><span>Live Diana network observations appear below when both endpoint identities verify. Threat metrics and activity remain mock data.</span></div><Badge tone="demo">MOCK DATA</Badge></div>
     <OverviewVisuals snapshot={props.networkSnapshot} />
-    <div className="metric-grid"><MetricCard label="SECURITY POSTURE" value="Guarded" detail="Illustrative policy state" icon="shield" tone="green" trend="MOCK DATA" /><MetricCard label="POLICY CHECKS" value="1,284" detail="Sample activity · last 24h" icon="check" tone="cyan" trend="MOCK DATA" /><MetricCard label="PENDING APPROVALS" value="03" detail="Illustrative queue" icon="clock" tone="amber" trend="MOCK DATA" /><MetricCard label="AUDIT INTEGRITY" value="Demo" detail="Illustrative visualization · sample only" icon="link" tone="violet" trend="MOCK DATA" /></div>
-    <div className="overview-grid"><Card className="posture-card"><SectionHeading title="Protection layers" subtitle="Live chain observations are separate from demo controls" action={<Badge tone="neutral">MIXED SOURCES</Badge>} /><div className="layer-list"><SecurityLayer number="01" title="Native hybrid signatures" subtitle="ML-DSA-87 + classical signature" status="Open live monitor" tone="cyan" icon="key" /><SecurityLayer number="02" title="EVM authorization window" subtitle="Separate bounded EVM access" status="Open live monitor" tone="cyan" icon="window" /><SecurityLayer number="03" title="Deterministic policy engine" subtitle="Allowlist · limits · human review" status="SIMULATED" tone="amber" icon="sliders" /><SecurityLayer number="04" title="Emergency pause" subtitle="Policy-level action gate" status={props.emergencyPaused ? "PAUSED · SIMULATED" : "SIMULATED"} tone={props.emergencyPaused ? "red" : "amber"} icon="pause" /></div><div className="card-footnote"><Icon name="info" size={13} /> PQC and EVM status require successful reads from both pinned Diana endpoints.</div></Card>
-      <GlowCard className="activity-card"><SectionHeading title="Recent activity" subtitle="Illustrative events · mock data" action={<button className="text-action" onClick={props.openAudit}>View audit log <Icon name="arrow" size={13} /></button>} /><SecurityTimeline events={demoEvents} compact /></GlowCard></div>
-    <div className="lower-grid"><Card><SectionHeading title="Native balance read" subtitle="QoreChain SDK · Diana identity checked first" action={<Badge tone={props.balanceState.status === "success" ? "green" : "amber"}>{props.balanceState.status === "success" ? "LIVE TESTNET" : "UNAVAILABLE"}</Badge>} /><ReadPanel address={props.address} setAddress={props.setAddress} state={props.balanceState} load={props.loadBalance} /></Card><Card><SectionHeading title="Tokenomics endpoint" subtitle="QoreChain SDK · Diana identity checked first" action={<Badge tone={props.tokenState.status === "success" ? "green" : "amber"}>{props.tokenState.status === "success" ? "LIVE TESTNET" : "UNAVAILABLE"}</Badge>} /><TokenPanel state={props.tokenState} load={props.loadTokenomics} /></Card></div>
+    <div className="metric-grid"><MetricCard label="SECURITY POSTURE" value="Guarded" detail="Illustrative policy state" icon="shield" tone="green" trend="MOCK DATA" /><MetricCard label="POLICY CHECKS" value="1,284" detail="Sample activity Â· last 24h" icon="check" tone="cyan" trend="MOCK DATA" /><MetricCard label="PENDING APPROVALS" value="03" detail="Illustrative queue" icon="clock" tone="amber" trend="MOCK DATA" /><MetricCard label="AUDIT INTEGRITY" value="Demo" detail="Illustrative visualization Â· sample only" icon="link" tone="violet" trend="MOCK DATA" /></div>
+    <div className="overview-grid"><Card className="posture-card"><SectionHeading title="Protection layers" subtitle="Live chain observations are separate from demo controls" action={<Badge tone="neutral">MIXED SOURCES</Badge>} /><div className="layer-list"><SecurityLayer number="01" title="Native hybrid signatures" subtitle="ML-DSA-87 + classical signature" status="Open live monitor" tone="cyan" icon="key" /><SecurityLayer number="02" title="EVM authorization window" subtitle="Separate bounded EVM access" status="Open live monitor" tone="cyan" icon="window" /><SecurityLayer number="03" title="Deterministic policy engine" subtitle="Allowlist Â· limits Â· human review" status="SIMULATED" tone="amber" icon="sliders" /><SecurityLayer number="04" title="Emergency pause" subtitle="Policy-level action gate" status={props.emergencyPaused ? "PAUSED Â· SIMULATED" : "SIMULATED"} tone={props.emergencyPaused ? "red" : "amber"} icon="pause" /></div><div className="card-footnote"><Icon name="info" size={13} /> PQC and EVM status require successful reads from both pinned Diana endpoints.</div></Card>
+      <GlowCard className="activity-card"><SectionHeading title="Recent activity" subtitle="Illustrative events Â· mock data" action={<button className="text-action" onClick={props.openAudit}>View audit log <Icon name="arrow" size={13} /></button>} /><SecurityTimeline events={demoEvents} compact /></GlowCard></div>
+    <div className="lower-grid"><Card><SectionHeading title="Native balance read" subtitle="QoreChain SDK Â· Diana identity checked first" action={<Badge tone={props.balanceState.status === "success" ? "green" : "amber"}>{props.balanceState.status === "success" ? "LIVE TESTNET" : "UNAVAILABLE"}</Badge>} /><ReadPanel address={props.address} setAddress={props.setAddress} state={props.balanceState} load={props.loadBalance} /></Card><Card><SectionHeading title="Diana tokenomics" subtitle="Verified native REST with JSON-RPC capability probe" action={<Badge tone={tokenStateTone(props.tokenState)}>{tokenStateLabel(props.tokenState)}</Badge>} /><TokenPanel state={props.tokenState} load={props.loadTokenomics} /></Card></div>
     <p className="disclaimer">All security metrics shown above are MOCK DATA. No live security posture or audit verification is claimed.</p>
   </>;
 }
 function OverviewVisuals({ snapshot }: { snapshot: QoreChainObservationSnapshot | null }): JSX.Element {
   const pqc = snapshot?.accountPqc.status === "available" ? snapshot.accountPqc.value.registered ? "Registered" : "Not registered" : snapshot?.accountPqc.status === "unavailable" ? "Unavailable" : "Not queried";
   const pqcTone: BadgeTone = pqc === "Registered" ? "green" : pqc === "Unavailable" ? "amber" : "neutral";
-  const window = snapshot?.evmWindow.status === "available" ? snapshot.evmWindow.value.live ? "Live window" : snapshot.evmWindow.value.found ? "Stored · inactive" : "No window" : snapshot?.evmWindow.status === "unavailable" ? "Unavailable" : "Not queried";
+  const window = snapshot?.evmWindow.status === "available" ? snapshot.evmWindow.value.live ? "Live window" : snapshot.evmWindow.value.found ? "Stored Â· inactive" : "No window" : snapshot?.evmWindow.status === "unavailable" ? "Unavailable" : "Not queried";
   const windowTone: BadgeTone = window === "Live window" ? "green" : window === "Unavailable" ? "amber" : "neutral";
   const verified = isDianaIdentityVerified(snapshot);
-  const network = verified && snapshot?.chain.status === "available" ? `LIVE TESTNET · ${snapshot.chain.value.height}` : "UNAVAILABLE";
+  const network = verified && snapshot?.chain.status === "available" ? `LIVE TESTNET Â· ${snapshot.chain.value.height}` : "UNAVAILABLE";
   const networkTone: "green" | "amber" | "muted" = verified ? "green" : snapshot ? "amber" : "muted";
   return <>
-    <section className="posture-hero" aria-label="Illustrative security posture overview">
-      <div className="posture-visual"><div className="posture-ring"><div className="posture-ring-inner"><Icon name="shield" size={24} /><span>DEMO POSTURE</span><strong>Guarded</strong><small>ILLUSTRATIVE</small></div></div><span className="ring-label ring-label-top">POLICY SHIELD</span><span className="ring-label ring-label-bottom">SIMULATION STATE</span></div>
-      <div className="posture-summary"><div className="eyebrow"><span className="eyebrow-line" />QUANTUM SECURITY SNAPSHOT</div><h2>Layered protection.<br /><em>One clear view.</em></h2><p>Policy posture and activity are simulated. Network status is unavailable until both Diana endpoint identities are verified.</p><div className="hero-tags"><Badge tone="demo"><span className="demo-pulse" />SIMULATED</Badge><span>QORECHAIN · TESTNET</span><span>READ ONLY</span></div></div>
-      <div className="posture-statuses"><SecurityStatus label="NATIVE PQC" value={pqc} detail={`${snapshot?.accountPqc.status === "available" ? "LIVE TESTNET" : "UNAVAILABLE"} · ${snapshot?.accountAddress ? `Public account · ${snapshot.accountAddress}` : "Public address only"}`} tone={pqcTone === "neutral" ? "muted" : pqcTone} icon="key" /><SecurityStatus label="EVM ACCESS" value={window} detail={`${snapshot?.evmWindow.status === "available" ? "LIVE TESTNET" : "UNAVAILABLE"} · authorization-window read`} tone={windowTone === "neutral" ? "muted" : windowTone} icon="window" /><SecurityStatus label="NETWORK" value={network} detail={snapshot ? `Last successful field · ${snapshot.lastSuccessfulRefreshAt ? new Date(snapshot.lastSuccessfulRefreshAt).toLocaleTimeString() : "none"}` : "UNAVAILABLE · refresh the testnet monitor"} tone={networkTone} icon="activity" /></div>
+    <section className="posture-hero" aria-label="Diana Testnet network status overview">
+      <div className="posture-visual"><div className="posture-ring"><div className="posture-ring-inner"><Icon name="shield" size={24} /><span>NETWORK MODE</span><strong>DIANA TESTNET</strong><small>{isDianaIdentityVerified(snapshot) ? "IDENTITIES VERIFIED" : "IDENTITY PENDING"}</small></div></div><span className="ring-label ring-label-top">NATIVE + EVM IDENTITY</span><span className="ring-label ring-label-bottom">READ-ONLY NETWORK</span></div>
+      <div className="posture-summary"><div className="eyebrow"><span className="eyebrow-line" />QUANTUM SECURITY SNAPSHOT</div><h2>Layered protection.<br /><em>One clear view.</em></h2><p>Live Diana endpoint identity and network observations are shown below when both endpoint identities verify. Policy posture, threat metrics, and activity remain simulated.</p><div className="hero-tags">{isDianaIdentityVerified(snapshot) ? <Badge tone="green">LIVE TESTNET</Badge> : <Badge tone="amber">IDENTITY PENDING</Badge>}<span>QORECHAIN Â· TESTNET</span><span>READ ONLY</span></div></div>
+      <div className="posture-statuses"><SecurityStatus label="NATIVE PQC" value={pqc} detail={`${snapshot?.accountPqc.status === "available" ? "LIVE TESTNET" : "UNAVAILABLE"} Â· ${snapshot?.accountAddress ? `Public account Â· ${snapshot.accountAddress}` : "Public address only"}`} tone={pqcTone === "neutral" ? "muted" : pqcTone} icon="key" /><SecurityStatus label="EVM ACCESS" value={window} detail={`${snapshot?.evmWindow.status === "available" ? "LIVE TESTNET" : "UNAVAILABLE"} Â· authorization-window read`} tone={windowTone === "neutral" ? "muted" : windowTone} icon="window" /><SecurityStatus label="NETWORK" value={network} detail={snapshot ? `Last successful field Â· ${snapshot.lastSuccessfulRefreshAt ? new Date(snapshot.lastSuccessfulRefreshAt).toLocaleTimeString() : "none"}` : "UNAVAILABLE Â· refresh the testnet monitor"} tone={networkTone} icon="activity" /></div>
     </section>
-      <div className="visualization-grid"><Card className="chart-card"><PremiumChart title="Policy activity" subtitle="Synthetic event volume · deterministic demo series" values={[12, 16, 13, 22, 19, 28, 24, 37, 32, 42, 38, 49, 46, 58, 51, 63, 60, 69, 62, 74, 68, 80, 76, 87]} /><div className="chart-legend"><span><i className="legend-dot legend-cyan" />Policy evaluations</span><Badge tone="demo">MOCK DATA</Badge></div></Card><Card className="risk-card"><div className="chart-heading"><div><h3>Demo risk distribution</h3><p>Illustrative scenario mix · not observed activity</p></div><Badge tone="demo">MOCK DATA</Badge></div><div className="risk-visual"><div className="risk-donut"><div><strong>100%</strong><span>MOCK DATA</span></div></div><div className="risk-legend"><div><i className="legend-dot legend-violet" /><span>Policy denied</span><strong>42%</strong></div><div><i className="legend-dot legend-cyan" /><span>Approval required</span><strong>33%</strong></div><div><i className="legend-dot legend-amber" /><span>Allowed in scenario</span><strong>25%</strong></div></div></div><div className="risk-footnote"><Icon name="info" size={13} />Deterministic mock distribution, supplied for presentation only.</div></Card></div>
+      <div className="visualization-grid"><Card className="chart-card"><PremiumChart title="Policy activity" subtitle="Synthetic event volume Â· deterministic demo series" values={[12, 16, 13, 22, 19, 28, 24, 37, 32, 42, 38, 49, 46, 58, 51, 63, 60, 69, 62, 74, 68, 80, 76, 87]} /><div className="chart-legend"><span><i className="legend-dot legend-cyan" />Policy evaluations</span><Badge tone="demo">MOCK DATA</Badge></div></Card><Card className="risk-card"><div className="chart-heading"><div><h3>Demo risk distribution</h3><p>Illustrative scenario mix Â· not observed activity</p></div><Badge tone="demo">MOCK DATA</Badge></div><div className="risk-visual"><div className="risk-donut"><div><strong>100%</strong><span>MOCK DATA</span></div></div><div className="risk-legend"><div><i className="legend-dot legend-violet" /><span>Policy denied</span><strong>42%</strong></div><div><i className="legend-dot legend-cyan" /><span>Approval required</span><strong>33%</strong></div><div><i className="legend-dot legend-amber" /><span>Allowed in scenario</span><strong>25%</strong></div></div></div><div className="risk-footnote"><Icon name="info" size={13} />Deterministic mock distribution, supplied for presentation only.</div></Card></div>
   </>;
 }
-function MonitorPage(props: { client: QoreChainClient; balanceState: ReadState<Balance[]>; tokenState: ReadState<string>; address: string; setAddress: (value: string) => void; loadBalance: () => void; loadTokenomics: () => void; snapshot: QoreChainObservationSnapshot | null; refreshing: boolean; refreshError: string | null; refreshNetwork: () => void; loadMoreTransactions: () => void; transactionPageLoading: boolean; transactionPageError: string | null }): JSX.Element {
+function MonitorPage(props: { client: QoreChainClient; balanceState: ReadState<Balance[]>; tokenState: ReadState<TokenomicsSnapshot>; address: string; setAddress: (value: string) => void; loadBalance: () => void; loadTokenomics: () => void; snapshot: QoreChainObservationSnapshot | null; refreshing: boolean; refreshError: string | null; refreshNetwork: () => void; loadMoreTransactions: () => void; transactionPageLoading: boolean; transactionPageError: string | null }): JSX.Element {
   return <>
     <QoreChainMonitorView snapshot={props.snapshot} loading={props.refreshing} error={props.refreshError} address={props.address} setAddress={props.setAddress} refresh={props.refreshNetwork} loadMoreTransactions={props.loadMoreTransactions} transactionPageLoading={props.transactionPageLoading} transactionPageError={props.transactionPageError} />
-    <div className="monitor-grid monitor-read-grid"><Card><SectionHeading title="Native balance query" subtitle="Read-only · existing QoreChain SDK behavior" /><ReadPanel address={props.address} setAddress={props.setAddress} state={props.balanceState} load={props.loadBalance} /></Card><Card><SectionHeading title="Tokenomics query" subtitle="Read-only · existing qor namespace behavior" /><TokenPanel state={props.tokenState} load={props.loadTokenomics} /></Card></div>
-    <div className="monitor-boundary"><Icon name="lock" size={14} />Configured SDK: {props.client.network.name} · Native chain {props.client.network.chainId} · Native REST {QORECHAIN_TESTNET.rest} · EVM RPC {QORECHAIN_TESTNET.evmRpc}</div>
+    <div className="monitor-grid monitor-read-grid"><Card><SectionHeading title="Native balance query" subtitle="Read-only Â· existing QoreChain SDK behavior" /><ReadPanel address={props.address} setAddress={props.setAddress} state={props.balanceState} load={props.loadBalance} /></Card><Card><SectionHeading title="Diana tokenomics" subtitle="Verified native REST with JSON-RPC capability probe" action={<Badge tone={tokenStateTone(props.tokenState)}>{tokenStateLabel(props.tokenState)}</Badge>} /><TokenPanel state={props.tokenState} load={props.loadTokenomics} /></Card></div>
+    <div className="monitor-boundary"><Icon name="lock" size={14} />Configured SDK: {props.client.network.name} Â· Native chain {props.client.network.chainId} Â· Native REST {QORECHAIN_TESTNET.rest} Â· EVM RPC {QORECHAIN_TESTNET.evmRpc}</div>
   </>;
 }
-function SettingsPage(props: { client: QoreChainClient; balanceState: ReadState<Balance[]>; tokenState: ReadState<string> }): JSX.Element { return <div className="settings-grid"><Card><SectionHeading title="Network profile" subtitle="Read-only QoreChain SDK client" /><div className="setting-row"><div><strong>Network preset</strong><span>The client is explicitly initialized for testnet.</span></div><Badge tone="cyan">{props.client.network.name}</Badge></div><div className="setting-row"><div><strong>Native REST endpoint</strong><span className="endpoint-value">{QORECHAIN_TESTNET.rest}</span></div><StatusDot tone="muted" /></div><div className="setting-row"><div><strong>EVM JSON-RPC endpoint</strong><span className="endpoint-value">{props.client.network.endpoints.evmRpc ?? "Unavailable"}</span></div><StatusDot tone="muted" /></div></Card><Card><SectionHeading title="Workspace safety" subtitle="Read-only testnet boundaries" /><div className="safety-list"><SafetyRow icon="flask" title="Demo environment" detail="Sample metrics are clearly labeled." /><SafetyRow icon="eye" title="Read-only network calls" detail="Network, feature, PQC, window, balance and tokenomics reads are read-only." /><SafetyRow icon="ban" title="Transaction actions" detail="Signing and broadcasting are not implemented." /><SafetyRow icon="key" title="No secret inputs" detail="The dashboard does not request seed phrases or private keys." /></div></Card><Card className="wide-card"><SectionHeading title="Data freshness" subtitle="Successful reads only" /><Freshness label="Native balance" state={props.balanceState} /><Freshness label="Tokenomics" state={props.tokenState} /><p className="muted-note">Timestamps are recorded locally after a successful query in this session.</p></Card></div>; }
+function SettingsPage(props: {
+  client: QoreChainClient;
+  balanceState: ReadState<Balance[]>;
+  tokenState: ReadState<TokenomicsSnapshot>;
+  onNativeAddressChange: (address: string) => void;
+}): JSX.Element {
+  return (
+    <div className="settings-grid">
+      <Card>
+        <SectionHeading title="Network profile" subtitle="Read-only QoreChain SDK client" />
+        <div className="setting-row">
+          <div><strong>Network preset</strong><span>The client is explicitly initialized for testnet.</span></div>
+          <Badge tone="cyan">{props.client.network.name}</Badge>
+        </div>
+        <div className="setting-row">
+          <div><strong>Native REST endpoint</strong><span className="endpoint-value">{QORECHAIN_TESTNET.rest}</span></div>
+          <StatusDot tone="muted" />
+        </div>
+        <div className="setting-row">
+          <div><strong>EVM JSON-RPC endpoint</strong><span className="endpoint-value">{props.client.network.endpoints.evmRpc ?? "Unavailable"}</span></div>
+          <StatusDot tone="muted" />
+        </div>
+      </Card>
+
+      <Card>
+        <SectionHeading title="Workspace safety" subtitle="Read-only testnet boundaries" />
+        <div className="safety-list">
+          <SafetyRow icon="flask" title="Demo environment" detail="Sample metrics are clearly labeled." />
+          <SafetyRow icon="eye" title="Read-only network calls" detail="Network, feature, PQC, window, balance and tokenomics reads are read-only." />
+          <SafetyRow icon="ban" title="Transaction actions" detail="Signing and broadcasting are not implemented." />
+          <SafetyRow icon="key" title="No secret inputs" detail="The dashboard does not request seed phrases or private keys." />
+        </div>
+      </Card>
+
+      <Card className="wide-card">
+        <SectionHeading title="Wallet Connections" subtitle="QoreX Native and MetaMask EVM Â· Diana Testnet" />
+        <WalletConnect onNativeAddressChange={props.onNativeAddressChange} />
+      </Card>
+
+      <Card className="wide-card">
+        <OnChainPolicy />
+      </Card>
+      <Card className="wide-card">
+        <SectionHeading title="Data freshness" subtitle="Successful reads only" />
+        <Freshness label="Native balance" state={props.balanceState} />
+        <Freshness label="Tokenomics" state={props.tokenState} />
+        <p className="muted-note">Timestamps come from successful reads, with source time recorded by the local API.</p>
+      </Card>
+    </div>
+  );
+}
 
 function ReadPanel(props: { address: string; setAddress: (value: string) => void; state: ReadState<Balance[]>; load: () => void }): JSX.Element {
-  return <div className="read-panel"><label className="field-label" htmlFor="qore-address">QoreChain address</label><div className="read-form"><input id="qore-address" value={props.address} onChange={(e) => props.setAddress(e.target.value)} placeholder="qor1…" autoComplete="off" /><Button icon="arrow" onClick={props.load} disabled={props.state.status === "loading"}>{props.state.status === "loading" ? "Reading…" : "Read balance"}</Button></div>{props.state.status === "idle" && <EmptyState icon="database" title="UNAVAILABLE · no balance loaded" detail="Enter a public address and verify both Diana network identities first." />}{props.state.status === "loading" && <div className="inline-state"><span className="spinner" /> Querying the configured endpoint…</div>}{props.state.status === "error" && <div className="read-error" role="alert"><StatusDot tone="red" /><div><strong>UNAVAILABLE · balance read failed</strong><span>{props.state.error}</span>{props.state.updatedAt && <small>Last successful read {props.state.updatedAt.toLocaleString()}</small>}</div></div>}{props.state.status === "error" && props.state.staleData && <div className="balance-results"><Badge tone="amber">UNAVAILABLE · STALE DATA</Badge>{props.state.staleData.map((b) => <div className="balance-row" key={b.denom}><strong>{b.amount}</strong><span>{b.denom}</span></div>)}</div>}{props.state.status === "success" && <><Freshness label="LIVE TESTNET balance read" state={props.state.updatedAt} /><div className="balance-results">{props.state.data?.length ? props.state.data.map((b) => <div className="balance-row" key={b.denom}><strong>{b.amount}</strong><span>{b.denom}</span></div>) : <EmptyState icon="inbox" title="No balances returned" detail="The successful testnet response contained no balances for this address." />}</div></>}</div>;
+  const addressMatches = props.state.address === props.address.trim();
+  const showCurrent = props.state.status === "success" && addressMatches;
+  return <div className="read-panel">
+    <label className="field-label" htmlFor="qore-address">QoreChain address</label>
+    <div className="read-form"><input id="qore-address" value={props.address} onChange={(e) => props.setAddress(e.target.value)} placeholder="qor1â€¦" autoComplete="off" /><Button icon="arrow" onClick={props.load} disabled={props.state.status === "loading"}>{props.state.status === "loading" ? "Readingâ€¦" : "Read balance"}</Button></div>
+    {props.state.status === "idle" && <EmptyState icon="database" title="UNAVAILABLE Â· no balance loaded" detail="Enter a public address and verify both Diana network identities first." />}
+    {props.state.status === "loading" && <div className="inline-state"><span className="spinner" /> Querying the configured endpointâ€¦</div>}
+    {props.state.status === "error" && <div className="read-error" role="alert"><StatusDot tone="red" /><div><strong>UNAVAILABLE Â· balance read failed</strong><span>{props.state.error}</span>{props.state.updatedAt && <small>Last successful read {props.state.updatedAt.toLocaleString()}</small>}</div></div>}
+    {props.state.status === "success" && !addressMatches && <div className="read-error" role="status"><StatusDot tone="amber" /><div><strong>UNAVAILABLE Â· address changed</strong><span>The displayed result belongs to {props.state.address}; read again for the current address.</span></div></div>}
+    {props.state.status === "error" && props.state.staleData && <div className="balance-results"><Badge tone="amber">UNAVAILABLE Â· STALE DATA Â· {props.state.staleAddress ?? "prior address unavailable"}</Badge>{props.state.staleData.map((b) => <div className="balance-row" key={b.denom}><strong>{b.amount}</strong><span>{b.denom}</span></div>)}</div>}
+    {showCurrent && <><Freshness label="LIVE TESTNET balance read" state={props.state.updatedAt} /><div className="balance-results">{props.state.data?.length ? props.state.data.map((b) => <div className="balance-row" key={b.denom}><strong>{b.amount}</strong><span>{b.denom}</span></div>) : <EmptyState icon="inbox" title="No balances returned" detail="The successful testnet response contained no balances for this address." />}</div></>}
+  </div>;
+}function TokenPanel(props: { state: ReadState<TokenomicsSnapshot>; load: () => void }): JSX.Element {
+  const snapshot = props.state.status === "success" ? props.state.data : props.state.staleData ?? null;
+  const label = props.state.status === "loading" ? "LOADING" : snapshot?.source ?? "UNAVAILABLE";
+  const tone: BadgeTone = label === "LIVE TESTNET" ? "green" : label === "PARTIALLY AVAILABLE" || label === "LOADING" ? "amber" : "neutral";
+  const burnEntries = snapshot?.burnsBySourceQor ? Object.entries(snapshot.burnsBySourceQor).sort((a, b) => Number(b[1]) - Number(a[1])) : [];
+  const burnMax = Math.max(0, ...burnEntries.map(([, amount]) => Number(amount)));
+  return <div className="token-panel">
+    <div className="token-action"><p>Diana Testnet chain state only. Values appear only when returned and schema-checked by the local API.</p><Button icon="arrow" variant="secondary" onClick={props.load} disabled={props.state.status === "loading"}>{props.state.status === "loading" ? "Readingâ€¦" : "Refresh tokenomics"}</Button></div>
+    {(props.state.status === "idle" || props.state.status === "loading") && !snapshot && <EmptyState icon="chart" title={props.state.status === "loading" ? "Loading Diana Testnet data" : "UNAVAILABLE Â· no tokenomics observation"} detail="The API verifies both Diana network identities before querying the official tokenomics routes." />}
+    {props.state.status === "error" && <div className="read-error" role="alert"><StatusDot tone="red" /><div><strong>Endpoint unavailable</strong><span>{props.state.error}</span>{props.state.updatedAt && <small>Last successful update {props.state.updatedAt.toLocaleString()}</small>}</div></div>}
+    {snapshot && <>
+      {(props.state.status === "loading" || props.state.status === "error" || snapshot.source === "UNAVAILABLE") && <Badge tone="amber">{props.state.status === "error" || props.state.status === "loading" ? "STALE Â· " : ""}{label}</Badge>}
+      {snapshot.source === "UNAVAILABLE" && <EmptyState icon="chart" title="Endpoint unavailable" detail="No tokenomics values were returned. No mainnet or placeholder values are used." />}
+      <div className="tokenomics-metrics">
+        <TokenMetric label="Total QOR supply" value={showField(snapshot.supplyQor, " QOR")} source={snapshot.supplyQor.status} />
+        <TokenMetric label="Total burned" value={showField(snapshot.totalBurnedQor, " QOR")} source={snapshot.totalBurnedQor.status} />
+        <TokenMetric label="Inflation mode" value={showField(snapshot.emissionMode, "")} source={snapshot.emissionMode.status} />
+        <TokenMetric label="Remaining emission" value={showField(snapshot.remainingEmissionQor, " QOR")} source={snapshot.remainingEmissionQor.status} />
+      </div>
+      <div className="tokenomics-details">
+        <div><span>Fixed emission / epoch</span><strong>{showField(snapshot.fixedEpochEmissionQor, " QOR")}</strong></div>
+        <div><span>Target APY</span><strong>{snapshot.targetApyBps.status === "available" && snapshot.targetApyBps.value !== null ? `${bpsToPercent(snapshot.targetApyBps.value)}%` : "UNAVAILABLE"}</strong></div>
+        <div><span>Epoch length</span><strong>{showField(snapshot.epochLengthBlocks, " blocks")}</strong></div>
+        <div><span>Current epoch</span><strong>{showField(snapshot.currentEpoch, "")}</strong></div>
+        <div><span>Next epoch height</span><strong>{showField(snapshot.nextEpochHeight, "")}</strong></div>
+        <div><span>Total minted</span><strong>{showField(snapshot.totalMintedQor, " QOR")}</strong></div>
+        <div><span>Emission cap</span><strong>{showField(snapshot.maxTotalEmissionQor, " QOR")}</strong></div>
+        <div><span>Last burn height</span><strong>{showField(snapshot.lastBurnHeight, "")}</strong></div>
+        <div><span>Network</span><strong>{snapshot.network.verified ? "qorechain-diana Â· EVM 9800" : "UNAVAILABLE Â· identity unverified"}</strong></div>
+      </div>
+      <div className="tokenomics-burns"><h3>Burns by source <Badge tone={snapshot.burnsBySourceQor ? "cyan" : "neutral"}>{snapshot.burnsBySourceQor ? "LIVE TESTNET" : "UNAVAILABLE"}</Badge></h3>
+        {burnEntries.length ? burnEntries.map(([name, amount]) => <div className="tokenomics-burn-row" key={name}><span>{name}</span><div className="tokenomics-bar"><i style={{ width: `${burnMax > 0 ? Math.max(1, Number(amount) / burnMax * 100) : 0}%` }} /></div><strong>{amount} QOR</strong></div>) : <p className="muted-note">UNAVAILABLE Â· no valid burn-source breakdown returned.</p>}
+      </div>
+      <div className="tokenomics-provenance"><Badge tone={tone}>{props.state.status === "loading" || props.state.status === "error" ? "STALE Â· " : ""}{label}</Badge>{snapshot.cached && <Badge tone="neutral">CACHED Â· 30s refresh window</Badge>}<span>Observed {new Date(snapshot.observedAt).toLocaleString()}</span><span>Last successful update {snapshot.lastSuccessfulAt ? new Date(snapshot.lastSuccessfulAt).toLocaleString() : "UNAVAILABLE"}</span></div>
+      <div className="tokenomics-sources"><strong>Data sources Â· {snapshot.network.verified ? "Diana identity verified" : "identity unavailable"}</strong>
+        {[snapshot.supplySource, snapshot.inflationParamsSource, snapshot.inflationEpochSource, snapshot.burnSource, snapshot.rpc].map((item) => <div key={`${item.endpoint}-${item.status}`}><Badge tone={item.status === "available" ? "green" : item.status === "schema-unverified" || item.status === "unsupported" ? "amber" : "neutral"}>{item === snapshot.rpc && item.status === "unsupported" ? "RPC METHOD UNSUPPORTED" : item.status.toUpperCase()}</Badge><code>{item.endpoint}</code><span>{item.httpStatus === null ? "HTTP unavailable" : `HTTP ${item.httpStatus}`}</span>{item.message && <small>{item.message}</small>}</div>)}
+      </div>
+    </>}
+  </div>;
 }
-function TokenPanel(props: { state: ReadState<string>; load: () => void }): JSX.Element { return <div className="token-panel"><div className="token-action"><p>Fetch the tokenomics overview from the configured QoreChain endpoint after both Diana identities verify.</p><Button icon="arrow" variant="secondary" onClick={props.load} disabled={props.state.status === "loading"}>{props.state.status === "loading" ? "Reading…" : "Read tokenomics"}</Button></div>{props.state.status === "idle" && <EmptyState icon="chart" title="UNAVAILABLE · no network data loaded" detail="The endpoint has not been queried in this session." />}{props.state.status === "loading" && <div className="inline-state"><span className="spinner" /> Requesting tokenomics overview…</div>}{props.state.status === "error" && <div className="read-error" role="alert"><StatusDot tone="red" /><div><strong>UNAVAILABLE · tokenomics read failed</strong><span>{props.state.error}</span>{props.state.updatedAt && <small>Last successful read {props.state.updatedAt.toLocaleString()}</small>}</div></div>}{props.state.status === "error" && props.state.staleData && <><Badge tone="amber">UNAVAILABLE · STALE DATA</Badge><pre className="json-output">{props.state.staleData}</pre></>}{props.state.status === "success" && <><Freshness label="LIVE TESTNET tokenomics" state={props.state.updatedAt} /><pre className="json-output">{props.state.data}</pre></>}</div>; }
+function showField(field: TokenomicsSnapshot["supplyQor"], suffix: string): string { return field.status === "available" && field.value !== null ? `${field.value}${suffix}` : "UNAVAILABLE"; }
+function bpsToPercent(value: string): string { const basisPoints = BigInt(value); const whole = basisPoints / 100n; const fraction = (basisPoints % 100n).toString().padStart(2, "0").replace(/0+$/, ""); return fraction ? `${whole}.${fraction}` : whole.toString(); }
+function TokenMetric(props: { label: string; value: string; source: string }): JSX.Element { return <div className="tokenomics-stat"><span>{props.label}</span><strong>{props.value}</strong><small>{props.source === "available" ? "LIVE TESTNET" : "UNAVAILABLE"}</small></div>; }
+function tokenStateLabel(state: ReadState<TokenomicsSnapshot>): string {
+  if (state.status === "loading") return "LOADING";
+  const snapshot = state.status === "success" ? state.data : state.staleData;
+  return snapshot?.source ?? "UNAVAILABLE";
+}
+function tokenStateTone(state: ReadState<TokenomicsSnapshot>): BadgeTone {
+  const label = tokenStateLabel(state);
+  return label === "LIVE TESTNET" ? "green" : label === "PARTIALLY AVAILABLE" || label === "LOADING" ? "amber" : "neutral";
+}
 function SecurityLayer(props: { number: string; title: string; subtitle: string; status: string; tone: BadgeTone; icon: string }): JSX.Element { return <div className="security-layer"><span className="layer-number">{props.number}</span><span className={`layer-icon tone-${props.tone}`}><Icon name={props.icon} size={16} /></span><span className="layer-copy"><strong>{props.title}</strong><small>{props.subtitle}</small></span><Badge tone={props.tone}>{props.status}</Badge></div>; }
 function InfoRow(props: { label: string; value: string }): JSX.Element { return <div className="info-row"><span>{props.label}</span><strong title={props.value}>{props.value}</strong></div>; }
 function SafetyRow(props: { icon: string; title: string; detail: string }): JSX.Element { return <div className="safety-row"><span className="safety-icon"><Icon name={props.icon} size={16} /></span><div><strong>{props.title}</strong><small>{props.detail}</small></div><StatusDot tone="green" /></div>; }
@@ -244,3 +369,4 @@ function isDianaIdentityVerified(snapshot: QoreChainObservationSnapshot | null):
   return snapshot?.chain.status === "available" && snapshot.chain.value.matchesExpectedNetwork
     && snapshot.evm.status === "available" && snapshot.evm.value.matchesExpectedNetwork;
 }
+

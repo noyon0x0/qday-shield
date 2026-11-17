@@ -1,9 +1,10 @@
-import { createServer } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+﻿import { createServer } from "node:http";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { resolve } from "node:path";
 import { createDemoPolicy, createFakeTestIdentity, SecurityPolicyEngine, type SimulatedTransfer } from "../src/security/index.js";
 import type { AuditRecord, JsonObject } from "../src/security/types.js";
 import { FileAuditStore } from "./auditStore.js";
+import { createTokenomicsService, type TokenomicsService } from "./tokenomicsService.js";
 import type { ApprovalRequest, DecisionResponse, EmergencyPauseRequest, PolicyResponse, QoreChainObservationResponse, SimulatedActionRequest } from "./contracts.js";
 
 export interface ApiConfig { host: string; port: number; auditDirectory: string; demoMode: boolean; allowRemote: boolean; token?: string; }
@@ -25,13 +26,15 @@ export function loadApiConfig(env: Record<string, string | undefined> = process.
   }
   if (allowRemote && (!token || !/^[A-Za-z0-9_-]{32,256}$/.test(token))) throw new Error("Remote API access requires QDAY_API_TOKEN with 32 to 256 URL-safe characters.");
   if (!allowRemote && host !== "127.0.0.1" && host !== "localhost" && host !== "::1") throw new Error("Non-loopback bind requires QDAY_ALLOW_REMOTE=true and a strong API token.");
-  return Object.freeze({ host, port, auditDirectory, demoMode: env.QDAY_DEMO_MODE !== "false", allowRemote, token });
+  // This service has only simulated identities and policies; configuration cannot turn it into a real-control API.
+  return Object.freeze({ host, port, auditDirectory, demoMode: true, allowRemote, token });
 }
 
-export function createQDayApi(options: { config?: ApiConfig; auditStore?: FileAuditStore; clock?: () => number } = {}) {
+export function createQDayApi(options: { config?: ApiConfig; auditStore?: FileAuditStore; clock?: () => number; tokenomicsService?: TokenomicsService } = {}) {
   const config = options.config ?? loadApiConfig();
   const clock = options.clock ?? Date.now;
   const store = options.auditStore ?? new FileAuditStore(config.auditDirectory);
+  const tokenomicsService = options.tokenomicsService ?? createTokenomicsService();
   const identity = createFakeTestIdentity("Q-Day local fake identity");
   const policy = createDemoPolicy(Number.MAX_SAFE_INTEGER);
   const pending = new Map<string, PendingAction>();
@@ -41,7 +44,11 @@ export function createQDayApi(options: { config?: ApiConfig; auditStore?: FileAu
   const initialize = async (): Promise<void> => {
     const verification = await store.initialize();
     engine = new SecurityPolicyEngine(policy, undefined, store);
-    if (verification.valid) engine.restoreFromAudit(await store.list(1_000_000).then((rows) => [...rows].reverse()));
+    if (verification.valid) {
+      const records = await store.list(1_000_000).then((rows) => [...rows].reverse());
+      engine.restoreFromAudit(records);
+      restorePendingActions(records, pending, identity);
+    }
   };
 
   const route = async (method: string, url: URL, body: unknown, remoteAddress: string, token?: string): Promise<{ status: number; payload: unknown }> => {
@@ -52,6 +59,9 @@ export function createQDayApi(options: { config?: ApiConfig; auditStore?: FileAu
     if (method === "GET" && url.pathname === "/api/observations/qorechain") {
       const payload: QoreChainObservationResponse = { source: "qorechain-testnet", state: "not-collected", message: "This backend does not collect or invent QoreChain network observations." };
       return { status: 200, payload };
+    }
+    if (method === "GET" && url.pathname === "/api/tokenomics") {
+      return { status: 200, payload: await tokenomicsService.read() };
     }
     if (method === "GET" && url.pathname === "/api/policies") {
       const payload: PolicyResponse = { source: "demo-policy", mode: "DEMO MODE", allowedRecipients: policy.allowedRecipients, ...engine.snapshot };
@@ -124,6 +134,7 @@ export function createQDayApi(options: { config?: ApiConfig; auditStore?: FileAu
   function BufferFrom(value: string): Uint8Array { return new TextEncoder().encode(value); }
 
   const server = createServer((request, response) => {
+    const requestId = randomUUID();
     void (async () => {
       try {
         const chunks: Uint8Array[] = [];
@@ -148,18 +159,22 @@ export function createQDayApi(options: { config?: ApiConfig; auditStore?: FileAu
         if (url.pathname !== "/api/audit/events" && [...url.searchParams.keys()].length > 0) throw new ApiError(400, "This endpoint does not accept query parameters.");
         if ((request.method === "GET" || request.method === "HEAD") && size > 0) throw new ApiError(400, "Read endpoints do not accept a request body.");
         const result = await route(request.method ?? "GET", url, body, request.socket.remoteAddress ?? "unknown", parsedToken);
-        send(response, result.status, result.payload);
+        send(response, result.status, result.payload, requestId);
       } catch (error) {
-        if (error instanceof ApiError) send(response, error.status, { error: error.message });
-        else if (error instanceof SyntaxError || error instanceof TypeError) send(response, 400, { error: "Request validation failed." });
+        if (error instanceof ApiError) send(response, error.status, { error: error.message, requestId }, requestId);
+        else if (error instanceof SyntaxError || error instanceof TypeError) send(response, 400, { error: "Request validation failed.", requestId }, requestId);
         else {
           // Never log request bodies, headers, credentials, keys, or exception objects.
           storeWritable = false;
-          send(response, 503, { error: "Operation could not be completed safely." });
+          send(response, 503, { error: "Operation could not be completed safely.", requestId }, requestId);
         }
       }
     })();
   });
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 15_000;
+  server.keepAliveTimeout = 5_000;
+  server.maxHeadersCount = 50;
   return { server, store, initialize, get engine() { return engine; }, config };
 }
 
@@ -168,6 +183,25 @@ function strictObject(value: unknown, allowed: readonly string[]): Record<string
   const object = value as Record<string, unknown>;
   if (Object.keys(object).some((key) => !allowed.includes(key))) throw new ApiError(400, "Request contains unsupported fields.");
   return object;
+}
+function restorePendingActions(records: readonly AuditRecord[], pending: Map<string, PendingAction>, identity: ReturnType<typeof createFakeTestIdentity>): void {
+  for (const record of records) {
+    const details = record.details;
+    if (details.policyId !== "qday-demo-policy-v1" || typeof details.requestId !== "string") continue;
+    if (details.status !== "requires-approval") { pending.delete(details.requestId); continue; }
+    if (typeof details.recipient !== "string" || typeof details.amount !== "string" || !/^\d+$/.test(details.amount)
+      || typeof details.signingMode !== "string" || (details.signingMode !== "hybrid-test" && details.signingMode !== "classical-secp256k1")
+      || typeof details.keyState !== "string" || (details.keyState !== "test-only" && details.keyState !== "compromised-simulated")
+      || typeof details.authorizationExpiresAt !== "number" || !Number.isSafeInteger(details.authorizationExpiresAt)) continue;
+    pending.set(details.requestId, { action: Object.freeze({
+      kind: "simulated-outgoing-transfer",
+      requestId: details.requestId,
+      recipient: details.recipient,
+      amount: BigInt(details.amount),
+      authorizationExpiresAt: details.authorizationExpiresAt,
+      actor: Object.freeze({ identity, signingMode: details.signingMode, keyState: details.keyState }),
+    }) });
+  }
 }
 function parseAction(body: unknown, compromised: boolean, identity: ReturnType<typeof createFakeTestIdentity>): SimulatedTransfer {
   const input = strictObject(body, ["requestId", "recipient", "amount", "authorizationExpiresAt", "signerMode"]) as unknown as SimulatedActionRequest;
@@ -180,12 +214,14 @@ function parseAction(body: unknown, compromised: boolean, identity: ReturnType<t
   return Object.freeze({ kind: "simulated-outgoing-transfer", requestId: input.requestId, recipient: input.recipient, amount: BigInt(input.amount), authorizationExpiresAt: input.authorizationExpiresAt, actor: Object.freeze({ identity, signingMode: input.signerMode === "hybrid-test" ? "hybrid-test" : "classical-secp256k1", keyState: compromised || input.signerMode === "classical-compromise" ? "compromised-simulated" : "test-only" }) });
 }
 function concat(chunks: readonly Uint8Array[], size: number): Uint8Array { const output = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.byteLength; } return output; }
-function send(response: import("node:http").ServerResponse, status: number, payload: unknown): void {
+function send(response: import("node:http").ServerResponse, status: number, payload: unknown, requestId: string): void {
   response.statusCode = status;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.setHeader("cache-control", "no-store");
   response.setHeader("x-content-type-options", "nosniff");
+  response.setHeader("x-request-id", requestId);
   response.end(JSON.stringify(payload));
 }
 
 export type { AuditRecord };
+

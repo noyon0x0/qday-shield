@@ -36,6 +36,7 @@ test("API strictly validates simulation requests and keeps observation sources s
 
   const accepted = await postJson(base, "/api/security/decisions", action("demo-allow"));
   assert.equal(accepted.status, 200);
+  assert.match(accepted.headers.get("x-request-id"), /^[0-9a-f-]{36}$/i);
   assert.equal((await accepted.json()).decision.status, "allow");
 
   const unknown = await postJson(base, "/api/security/decisions", action("demo-unknown", "20", "qday-demo://recipient/unknown"));
@@ -66,6 +67,14 @@ test("API strictly validates simulation requests and keeps observation sources s
   assert.equal((await (await fetch(`${base}/api/audit/verify`)).json()).valid, true);
 });
 
+test("tokenomics API exposes only the injected normalized service response", async (t) => {
+  const snapshot = { source: "UNAVAILABLE", observedAt: "2026-11-17T00:00:00.000Z", network: { verified: false } };
+  const { base } = await createService(t, { tokenomicsService: { read: async () => snapshot } });
+  const response = await fetch(`${base}/api/tokenomics`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), snapshot);
+});
+
 test("audit persistence survives restart and rejects a modified record", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "qday-api-restart-test-"));
   const config = loadApiConfig({ QDAY_AUDIT_DIR: directory }, process.cwd());
@@ -88,6 +97,12 @@ test("audit persistence survives restart and rejects a modified record", async (
   assert.equal(invalid.recordsChecked, 0);
   await writeFile(persistedPath, text, { mode: 0o600 });
   assert.equal((await second.store.reloadAndVerify()).valid, true);
+  await writeFile(persistedPath, `${text.split("\n")[0]}\n`, { mode: 0o600 });
+  const deleted = await second.store.verify();
+  assert.equal(deleted.valid, false);
+  assert.ok(deleted.reason.includes("Persisted audit history differs"));
+  await writeFile(persistedPath, text, { mode: 0o600 });
+  assert.equal((await second.store.reloadAndVerify()).valid, true);
   await writeFile(persistedPath, text.split("\n").slice(0, -1).reverse().join("\n") + "\n", { mode: 0o600 });
   const reordered = await second.store.verify();
   assert.equal(reordered.valid, false);
@@ -95,10 +110,33 @@ test("audit persistence survives restart and rejects a modified record", async (
   await rm(directory, { recursive: true, force: true });
 });
 
+test("pending simulated approvals remain reviewable after an API restart", async (t) => {
+  const { service: first, base } = await createService(t);
+  const pending = await postJson(base, "/api/security/decisions", action("demo-restart-approval", "600"));
+  assert.equal((await pending.json()).decision.status, "requires-approval");
+  await new Promise((resolve) => first.server.close(resolve));
+
+  const second = createQDayApi({ config: first.config, clock: () => timestamp });
+  await second.initialize();
+  await new Promise((resolve, reject) => {
+    second.server.once("error", reject);
+    second.server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = second.server.address();
+  const restartedBase = `http://127.0.0.1:${address.port}`;
+  t.after(async () => {
+    await new Promise((resolve) => second.server.close(resolve));
+  });
+  const approved = await postJson(restartedBase, "/api/security/decisions/demo-restart-approval/approval", { approvedBy: "demo-approver", decision: "approved" });
+  assert.equal(approved.status, 200);
+  assert.equal((await approved.json()).decision.status, "allow");
+});
+
 test("remote binding requires a strong token and audit storage cannot be web-served", () => {
   assert.throws(() => loadApiConfig({ QDAY_API_HOST: "0.0.0.0" }, process.cwd()), /QDAY_ALLOW_REMOTE/);
   assert.throws(() => loadApiConfig({ QDAY_ALLOW_REMOTE: "true", QDAY_API_TOKEN: "short" }, process.cwd()), /32 to 256/);
   assert.throws(() => loadApiConfig({ QDAY_AUDIT_DIR: "dist/audit" }, process.cwd()), /web-served/);
+  assert.equal(loadApiConfig({ QDAY_DEMO_MODE: "false" }, process.cwd()).demoMode, true);
 });
 
 test("sensitive decision routes are rate limited and reject unknown query fields", async (t) => {

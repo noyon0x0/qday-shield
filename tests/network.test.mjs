@@ -25,7 +25,7 @@ function makeFetch(options = {}) {
     if (url.includes("/pqc/v1/account/")) return json({ found: true, account: { algorithm_id: 1, possession_proven: true } });
     if (url.includes("/pqc/v1/evm_window/") && windowFailures > 0) { windowFailures -= 1; return json({ error: "window unavailable" }, 503); }
     if (url.includes("/pqc/v1/evm_window/")) return json(options.malformedWindow ? { found: true } : { found: true, live: true, opened_height: "123400", expiry_height: "123500", remaining_blocks: "44", max_txs: "5", used_txs: "1", remaining_txs: "4", max_value: "1000000", used_value: "250", remaining_value: "999750", native_only: false, allowed_targets: [] });
-    if (/\/cosmos\/tx\/v1beta1\/txs\/[0-9a-f]+/i.test(url)) return json({ tx: { body: { extension_options: [{ "@type": "/qorechain.pqc.v1.PQCHybridSignature", pqc_signature: options.missingHybridSignature ? "" : VALID_PQC_SIGNATURE_BASE64 }] } }, tx_response: { txhash: "ABCD1234", height: "123455", code: options.failedTxCode ? 5 : 0, events: [{ type: "pqc_hybrid_verify", attributes: [options.resultField ? { key: "result", value: "pass" } : { key: "status", value: "verified" }, { key: "address", value: TEST_ADDRESS }] }] } });
+    if (/\/cosmos\/tx\/v1beta1\/txs\/[0-9a-f]+/i.test(url)) return json({ tx: { body: { extension_options: [{ "@type": "/qorechain.pqc.v1.PQCHybridSignature", algorithm_id: options.wrongHybridAlgorithm ? 2 : 1, pqc_signature: options.missingHybridSignature ? "" : VALID_PQC_SIGNATURE_BASE64 }] } }, tx_response: { txhash: "ABCD1234", height: "123455", code: options.failedTxCode ? 5 : 0, events: [{ type: "pqc_hybrid_verify", attributes: [options.resultField ? { key: "result", value: "pass" } : { key: "status", value: "verified" }, { key: "address", value: TEST_ADDRESS }] }] } });
     if (url.includes("/cosmos/tx/v1beta1/txs")) {
       const query = decodeURIComponent(url);
       if (query.includes("message.sender")) return json(options.malformedTx ? { tx_responses: [{ txhash: "not-a-hash", height: "bad", code: "0" }] } : { tx_responses: [{ txhash: `ABCD${query.includes("page=2") ? "5678" : "1234"}`, height: query.includes("page=2") ? "123454" : "123455", code: 0, codespace: "", raw_log: "", events: [] }], pagination: { next_key: null, total: String(options.txTotal ?? 1) } });
@@ -70,7 +70,7 @@ test("SDK reads verify both Diana identities and observe public account, history
   assert.equal(snapshot.evmWindow.value.remainingBlocks, "44");
   assert.equal(snapshot.verificationEvents.status, "available");
   assert.equal(snapshot.verificationEventsScope, "ACCOUNT");
-  assert.deepEqual(snapshot.verificationEvents.value[0], { transactionHash: "ABCD1234", height: "123455", eventType: "pqc_hybrid_verify", status: "verified", reportedResult: "status=verified", address: TEST_ADDRESS, evidence: "node-reported-event", transactionCode: 0, hybridSignaturePresent: true });
+  assert.deepEqual(snapshot.verificationEvents.value[0], { transactionHash: "ABCD1234", height: "123455", eventType: "pqc_hybrid_verify", status: "verified", reportedResult: "status=verified", address: TEST_ADDRESS, evidence: "node-reported-event", transactionCode: 0, hybridSignaturePresent: true, hybridSignatureAlgorithmId: 1 });
   assert.equal(snapshot.lastSuccessfulRefreshAt, refreshedAt.toISOString());
   assert.ok(mock.calls.some((call) => decodeURIComponent(call.url).includes(`pqc_hybrid_verify.address='${TEST_ADDRESS}'`)));
   assert.ok(mock.calls.some((call) => decodeURIComponent(call.url).includes(`message.sender='${TEST_ADDRESS}'`)));
@@ -128,6 +128,14 @@ test("does not promote a node event to verified when transaction or signature-ex
   const failedSnapshot = await refreshQoreChainObservations(clientFor(failedFetch), TEST_ADDRESS, failedFetch);
   assert.equal(failedSnapshot.verificationEvents.value[0].status, "incomplete-evidence");
   assert.equal(failedSnapshot.verificationEvents.value[0].transactionCode, 5);
+});
+
+test("does not accept a hybrid signature extension with a non ML-DSA-87 algorithm id", async () => {
+  const mock = makeFetch({ wrongHybridAlgorithm: true });
+  const snapshot = await refreshQoreChainObservations(clientFor(mock.fetch), TEST_ADDRESS, mock.fetch);
+  assert.equal(snapshot.verificationEvents.status, "available");
+  assert.equal(snapshot.verificationEvents.value[0].status, "incomplete-evidence");
+  assert.equal(snapshot.verificationEvents.value[0].hybridSignaturePresent, false);
 });
 
 test("supports the official result=pass event variant and corroborates its transaction", async () => {

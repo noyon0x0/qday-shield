@@ -245,8 +245,10 @@ export class SecurityPolicyEngine {
         explanation,
         actorIdentity: action.actor?.identity?.identityId ?? "invalid-identity",
         signingMode: action.actor?.signingMode ?? "unknown",
+        keyState: action.actor?.keyState ?? "unknown",
         recipient,
         amount,
+        authorizationExpiresAt: Number.isSafeInteger(action.authorizationExpiresAt) ? action.authorizationExpiresAt : null,
         reasons: reasons.map((reason) => ({ code: reason.code, severity: reason.severity, message: reason.message })),
       },
     } as const;

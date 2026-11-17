@@ -36,7 +36,7 @@ The decision applies only to the local model and is not a QoreChain enforcement 
 ## 5. Verify audit behavior
 
 1. Open **Audit Logs** and select **Verify local chain**. It verifies the current in-memory browser records only.
-2. For the independent persistent API, start `npm run api` in another terminal. The API’s automated tests cover restart restoration and modified/reordered audit records. Do not edit or tamper with a real user’s audit file during a presentation.
+2. For the independent persistent API, start `npm run api` in another terminal. The API’s automated tests cover pending demo approval restoration after restart and modified, deleted, or reordered audit records. Do not edit or tamper with a real user’s audit file during a presentation.
 3. The browser audit display and API JSONL audit are separate stores; the browser page does not show API-persisted events.
 
 ## 6. Optional read-only network refresh
